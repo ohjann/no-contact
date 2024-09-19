@@ -1,3 +1,4 @@
+import { Suspense, useMemo } from "react";
 import {
   MinChatUiProvider,
   MainContainer,
@@ -6,52 +7,83 @@ import {
   MessageList,
 } from "@minchat/react-chat-ui";
 
+import { mongodb } from "../utils/db.server.js";
 import { copycat } from "@snaplet/copycat";
-import { Suspense, useMemo } from "react";
-import { Await, useSubmit } from "@remix-run/react";
-import type { Message, User } from "../../types";
+import type { ActionFunctionArgs } from "@remix-run/node";
+import {
+  Await,
+  useLoaderData,
+  useSubmit,
+  json,
+  Navigate,
+} from "@remix-run/react";
+import type { Message, User } from "../types";
 import {
   decryptMessage,
   encryptMessage,
   getUserIdFromPublicKey,
-} from "~/lib/utils";
+} from "../lib/utils";
 
-type Props = {
-  messages: Message[];
-  privateFileContent?: string;
-  publicFileContent?: string;
-};
+import { useKeyFileContent } from "../root";
 
-export default function Chat({
-  messages,
-  privateFileContent,
-  publicFileContent,
-}: Props) {
+export async function action({ request }: ActionFunctionArgs) {
+  const formData = await request.formData();
+  const message = formData.get("message");
+  const scrambled = formData.get("scrambled");
+
+  const db = mongodb.db("nocontact");
+  const collection = db.collection("messages");
+  await collection.insertOne({
+    text: message,
+    scrambled,
+    user: { id: "eoghan", name: "Eoghan" },
+    sentAt: new Date(),
+  });
+  return json({ ok: true });
+}
+
+export async function loader() {
+  const db = mongodb.db("nocontact");
+  const collection = db.collection<Message>("messages");
+
+  const messages: Message[] = await collection.find().toArray();
+  return json({ messages });
+}
+
+export default function Chat() {
+  const { messages } = useLoaderData<typeof loader>();
   const submit = useSubmit();
+
+  const { publicKeyFileContent, privateKeyFileContent } = useKeyFileContent();
 
   const decryptedMessages = useMemo(
     () =>
       Promise.all(
-        messages.map(async (m: any) => {
-          if (!privateFileContent || !m.text.includes("BEGIN")) {
-            return m;
-          }
-          return {
-            ...m,
-            text: await decryptMessage(privateFileContent.toString(), m.text),
-          };
-        })
+        messages
+          .filter(({ text }) => text)
+          .map(async (m: any) => {
+            if (!privateKeyFileContent || !m.text.includes("BEGIN")) {
+              return m;
+            }
+            return {
+              ...m,
+              text: await decryptMessage(
+                privateKeyFileContent.toString(),
+                m.text
+              ),
+            };
+          })
       ),
-    [messages, privateFileContent]
+    [messages, privateKeyFileContent]
   );
 
-  if (!privateFileContent || !publicFileContent) {
-    return "";
+  if (!privateKeyFileContent || !publicKeyFileContent) {
+    return <Navigate to={"/id-check"} replace />;
   }
 
   let identity: User;
 
-  getUserIdFromPublicKey(publicFileContent).then((id) => {
+  getUserIdFromPublicKey(publicKeyFileContent as string).then((id) => {
     if (id) {
       const [name, email] = id[0].split(" <");
       identity = {
@@ -63,7 +95,7 @@ export default function Chat({
 
   const handleMessageSend = async (message: string) => {
     const encryptedMessage = await encryptMessage(
-      publicFileContent!.toString(),
+      publicKeyFileContent!.toString(),
       message
     );
     submit(

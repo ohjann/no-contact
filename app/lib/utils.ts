@@ -29,7 +29,7 @@ export async function decryptMessage(
   });
   const privateKey = await openpgp.decryptKey({
     privateKey: await openpgp.readPrivateKey({ armoredKey: passedPrivateKey }),
-    passphrase: "super long and hard to guess secret",
+    // passphrase: "super long and hard to guess secret", // TODO
   });
   const { data: decrypted } = await openpgp.decrypt({
     message,
@@ -50,34 +50,11 @@ export async function getUserIdFromPublicKey(armoredPublicKey: string) {
   }
 }
 
-export async function downloadPGPKeys(name: string, email: string) {
-  const { privateKey, publicKey } = await openpgp.generateKey({
+export async function getPGPKeys(name: string, email: string) {
+  return openpgp.generateKey({
     type: "rsa", // Type of the key
     rsaBits: 4096, // RSA key size (defaults to 4096 bits)
     userIDs: [{ name, email }], // you can pass multiple user IDs
-    passphrase: "super long and hard to guess secret", // protects the private key
+    // passphrase: "super long and hard to guess secret", // protects the private key TODO
   });
-
-  /* HACKY PGP FILE DOWNLOAD */
-  var element = document.createElement("a");
-  element.setAttribute(
-    "href",
-    "data:text/plain;charset=utf-8," + encodeURIComponent(privateKey)
-  );
-  element.setAttribute("download", "private.pgp");
-  element.style.display = "none";
-  document.body.appendChild(element);
-  element.click();
-  document.body.removeChild(element);
-
-  var element = document.createElement("a");
-  element.setAttribute(
-    "href",
-    "data:text/plain;charset=utf-8," + encodeURIComponent(publicKey)
-  );
-  element.setAttribute("download", "public.pgp");
-  element.style.display = "none";
-  document.body.appendChild(element);
-  element.click();
-  document.body.removeChild(element);
 }
