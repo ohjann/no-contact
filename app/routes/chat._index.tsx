@@ -16,7 +16,6 @@ import { decryptMessage, encryptMessage } from "../lib/utils";
 import { useGetUserIdFromPublicKey } from "../hooks/useGetUserIdFromPublicKey";
 
 import { useKeyFileContent } from "../root";
-import { ObjectId } from "mongodb";
 
 type MessageType = {
   user: {
@@ -139,7 +138,7 @@ export default function Chat() {
 
     // Optimistic update
     const newMessage: MessageType = {
-      id: new ObjectId().toString(),
+      id: copycat.uuid("abc"),
       text: messageText,
       user: {
         id: user!.id,
