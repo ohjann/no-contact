@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
   MinChatUiProvider,
   MainContainer,
@@ -10,18 +10,25 @@ import {
 import { mongodb } from "../utils/db.server.js";
 import { copycat } from "@snaplet/copycat";
 import type { ActionFunctionArgs } from "@remix-run/node";
-import {
-  Await,
-  useLoaderData,
-  useSubmit,
-  json,
-  Navigate,
-} from "@remix-run/react";
+import { useLoaderData, useSubmit, json, Navigate } from "@remix-run/react";
 import type { Message } from "../types";
 import { decryptMessage, encryptMessage } from "../lib/utils";
 import { useGetUserIdFromPublicKey } from "../hooks/useGetUserIdFromPublicKey";
 
 import { useKeyFileContent } from "../root";
+import { ObjectId } from "mongodb";
+
+type MessageType = {
+  user: {
+    id: string;
+    name: string;
+  };
+  id?: string;
+  text?: string;
+  createdAt?: Date;
+  seen?: boolean;
+  loading?: boolean;
+};
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
@@ -42,8 +49,6 @@ export async function action({ request }: ActionFunctionArgs) {
   return json({ ok: true });
 }
 
-// TODO: cannot use pgp key for other user id, we'll need to assume that if we can't extract
-// a user identity that it's the other users message and use their in-database name
 export async function loader() {
   const db = mongodb.db("nocontact");
   const collection = db.collection<Message>("messages");
@@ -54,66 +59,100 @@ export async function loader() {
 }
 
 export default function Chat() {
-  const { messages, users } = useLoaderData<typeof loader>();
+  const { messages: initialMessages, users } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const { getUser, user } = useGetUserIdFromPublicKey();
-
   const { publicKeyFileContent, privateKeyFileContent } = useKeyFileContent();
+  const [decryptedMessages, setDecryptedMessages] = useState<MessageType[]>([]);
 
   useEffect(() => {
     getUser(publicKeyFileContent as string);
   }, [publicKeyFileContent, getUser]);
 
-  const decryptedMessages = useMemo(() => {
-    const otherUser = users.find((u) => u !== user?.name);
-    return Promise.all(
-      messages
-        .filter(({ text }) => text)
-        .map(async (m: any) => {
-          if (!privateKeyFileContent || !m.text.includes("BEGIN")) {
-            return m;
-          }
-          try {
-            const text = await decryptMessage(
-              privateKeyFileContent.toString(),
-              m.text
-            );
-            return {
-              ...m,
-              text,
-              user: user,
-              createdAt: new Date(m.sentAt),
-              seen: false,
-            };
-          } catch (e) {
-            return {
-              ...m,
-              text: m.scrambled,
-              user: {
-                id: otherUser,
-                name: otherUser,
-              },
-              createdAt: new Date(m.sentAt),
-              seen: false,
-            };
-          }
-        })
-    );
-  }, [messages, privateKeyFileContent, user, users]);
+  useEffect(() => {
+    const decryptInitialMessages = async () => {
+      // get name of other user from db
+      const otherUser = users.find((u) => u !== user?.name);
+
+      const convertToMessageType = (
+        message: Message,
+        messageUser: { id: string; name: string } | null
+      ): MessageType => ({
+        id: message._id?.toString(),
+        text: message.text,
+        user: {
+          id: messageUser?.id || "unknown",
+          name: messageUser?.name || "unknown",
+        },
+        createdAt: new Date(message.sentAt),
+      });
+
+      // decrypt the messages
+      const decrypted = await Promise.all(
+        initialMessages
+          .filter(({ text }) => text)
+          .map(async (m: Message) => {
+            if (!privateKeyFileContent || !m.text.includes("BEGIN")) {
+              return convertToMessageType(m, user);
+            }
+            try {
+              const decryptedText = await decryptMessage(
+                privateKeyFileContent.toString(),
+                m.text
+              );
+              return convertToMessageType(
+                {
+                  ...m,
+                  text: decryptedText.toString(),
+                },
+                user
+              );
+            } catch (e) {
+              return convertToMessageType(
+                {
+                  ...m,
+                  text: m.scrambled,
+                },
+                { id: otherUser, name: otherUser }
+              );
+            }
+          })
+      );
+      setDecryptedMessages(decrypted);
+    };
+
+    if (initialMessages.length > 0 && privateKeyFileContent && user) {
+      decryptInitialMessages();
+    }
+  }, [initialMessages, privateKeyFileContent, user, users]);
 
   if (!privateKeyFileContent || !publicKeyFileContent) {
+    console.log(privateKeyFileContent, publicKeyFileContent);
     return <Navigate to={"/id-check"} replace />;
   }
 
-  const handleMessageSend = async (message: string) => {
+  const handleMessageSend = async (messageText: string) => {
     const encryptedMessage = await encryptMessage(
       publicKeyFileContent!.toString(),
-      message
+      messageText
     );
+
+    // Optimistic update
+    const newMessage: MessageType = {
+      id: new ObjectId().toString(),
+      text: messageText,
+      user: {
+        id: user!.id,
+        name: user!.name,
+      },
+      createdAt: new Date(),
+    };
+    setDecryptedMessages((prev) => [...prev, newMessage]);
+
     submit(
       {
         message: encryptedMessage.toString(),
-        scrambled: copycat.scramble(message), // for UI purposes
+        scrambled: copycat.scramble(messageText),
         identity: JSON.stringify(user),
       },
       {
@@ -143,26 +182,16 @@ export default function Chat() {
       }}
       theme="#00000"
     >
-      <div className="col-start-2 bg-white rounded-sm h-[700px] max-h-[100vh] shadow-[0_0px_20px_0px_rgba(255,255,255,255.3)] min-w-[490px] [&>div>div>div:first-child]:min-h-[calc(100%-56px)] [&>div>div>div:nth-child(2)>div]:absolute [&>div>div>div:nth-child(2)>div]:bottom-0 [&>div>div>div>div>div:nth-child(2)>div]:justify-end">
+      <div className="col-start-2 bg-white rounded-sm h-[700px] max-h-[100vh] shadow-[0_0px_20px_0px_rgba(255,255,255,255.3)] min-w-[490px] [&>div>div>div:first-child]:min-h-[calc(100%-56px)] [&>div>div>div:nth-child(2)>div]:z-50 [&>div>div>div:nth-child(2)>div]:absolute [&>div>div>div:nth-child(2)>div]:bottom-0 [&>div>div>div>div>div:nth-child(2)>div]:justify-end">
         <MainContainer>
           <MessageContainer>
-            {messages.length > 0 && (
-              <Suspense fallback={<div className="h-full">Decrypting...</div>}>
-                <Await resolve={decryptedMessages}>
-                  {(resolvedValue) => {
-                    return user ? (
-                      <div>
-                        <MessageList
-                          currentUserId={user.id}
-                          messages={resolvedValue}
-                        />
-                      </div>
-                    ) : (
-                      ""
-                    );
-                  }}
-                </Await>
-              </Suspense>
+            {decryptedMessages.length > 0 && (
+              <div>
+                <MessageList
+                  currentUserId={user?.id}
+                  messages={decryptedMessages}
+                />
+              </div>
             )}
             <div>
               <MessageInput
