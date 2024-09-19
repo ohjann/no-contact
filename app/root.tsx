@@ -16,7 +16,7 @@ export default function App() {
         <Meta />
         <Links />
       </head>
-      <body className="noise">
+      <body className="noise overflow-hidden shadow-white shadow-inner">
         <Outlet />
       </body>
       <Scripts />

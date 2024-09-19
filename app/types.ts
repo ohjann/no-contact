@@ -6,7 +6,7 @@ export type User = {
 };
 
 export type Message = {
-  _id: BSONType;
+  _id?: BSONType;
   scrambled: string;
   sentAt: string;
   text: string;
