@@ -11,6 +11,7 @@ import errorSfx from "../assets/sounds/error_006.mp3";
 
 import {
   Form,
+  Link,
   json,
   useActionData,
   useNavigate,
@@ -39,10 +40,11 @@ export async function action({ request }: ActionFunctionArgs) {
       // maximum two users
       return new Response(RESPONSES.FULL, { status: 403 });
     }
-    const { salt, hash } = hashString(email.toString());
+    const { salt: nameSalt, hash: nameHash } = hashString(name.toString());
+    const { salt: emailSalt, hash: emailHash } = hashString(email.toString());
     await collection.insertOne({
-      name,
-      email: `${hash}+${salt}`,
+      name: `${nameHash}+${nameSalt}`,
+      email: `${emailHash}+${emailSalt}`,
     });
 
     const { privateKey, publicKey } = await getPGPKeys(
@@ -90,29 +92,39 @@ function GetId() {
   return navigation.state === "idle" && actionData === "full" ? (
     <div className="text-white">three's a crowd</div>
   ) : (
-    <Form className="text-white flex flex-col p-4 gap-4" method="post">
-      <Input
-        type="text"
-        onChange={(e) =>
-          setFormState({ ...formState, name: e.target.value.trim() })
-        }
-        name="name"
-        placeholder="name"
-      />
-      <Input
-        type="email"
-        onChange={(e) =>
-          setFormState({ ...formState, email: e.target.value.trim() })
-        }
-        name="email"
-        placeholder="email"
-      />
-      <Button disabled={!validForm} className="col-span-2" type="submit">
-        {navigation.state !== "idle"
-          ? "Creating public and private key..."
-          : "Create key pair"}
-      </Button>
-    </Form>
+    <>
+      <Form className="text-white flex flex-col p-4 gap-4" method="post">
+        <Input
+          type="text"
+          onChange={(e) =>
+            setFormState({ ...formState, name: e.target.value.trim() })
+          }
+          name="name"
+          placeholder="name"
+        />
+        <Input
+          type="email"
+          onChange={(e) =>
+            setFormState({ ...formState, email: e.target.value.trim() })
+          }
+          name="email"
+          placeholder="email"
+        />
+        <Button disabled={!validForm} className="col-span-2" type="submit">
+          {navigation.state !== "idle"
+            ? "Creating public and private key..."
+            : "Create key pair"}
+        </Button>
+      </Form>
+      <Link to={"/id-check"}>
+        <Button
+          variant="outline"
+          className="absolute bottom-2 left-2 opacity-50"
+        >
+          Back
+        </Button>
+      </Link>
+    </>
   );
 }
 
