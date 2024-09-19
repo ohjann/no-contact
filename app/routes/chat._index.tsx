@@ -32,7 +32,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const scrambled = formData.get("scrambled");
 
   if (message) {
-    const db = mongodb.db("nocontact");
+    const db = mongodb.db("nocontact"); // TODO: db layer
     const collection = db.collection("messages");
     await collection.insertOne({
       text: message,

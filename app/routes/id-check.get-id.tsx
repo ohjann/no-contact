@@ -2,51 +2,95 @@ import { useState } from "react";
 import useSound from "use-sound";
 
 import { Button } from "~/components/ui/button";
-import { getPGPKeys } from "~/lib/utils";
+import { getPGPKeys, hashString } from "~/lib/utils";
 import { Input } from "~/components/ui/input";
 import { useClientSideDownload } from "~/hooks/useClientSideDownload";
 
 import confirmationSfx from "../assets/sounds/confirmation_001.mp3";
-import { Form, useNavigate } from "@remix-run/react";
+import errorSfx from "../assets/sounds/error_006.mp3";
+
+import {
+  Form,
+  json,
+  useActionData,
+  useNavigate,
+  useNavigation,
+} from "@remix-run/react";
+import type { ActionFunctionArgs } from "@remix-run/node";
+import { mongodb } from "~/utils/db.server";
 
 const EMAIL_REGEX_99_99 =
   /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
 
-const Download = () => {
+const RESPONSES = {
+  FULL: "full",
+  WRONG: "wrong",
+} as const;
+
+export async function action({ request }: ActionFunctionArgs) {
+  const formData = await request.formData();
+  const name = formData.get("name");
+  const email = formData.get("email");
+  if (name && email) {
+    const db = mongodb.db("nocontact"); // TODO: db layer
+    const collection = db.collection("users");
+    const allUsers = await collection.find().toArray();
+    if (allUsers.length >= 2) {
+      // maximum two users
+      return new Response(RESPONSES.FULL, { status: 403 });
+    }
+    const { salt, hash } = hashString(email.toString());
+    await collection.insertOne({
+      name,
+      email: `${hash}+${salt}`,
+    });
+
+    const { privateKey, publicKey } = await getPGPKeys(
+      name.toString(),
+      email.toString()
+    );
+
+    return json({ privateKey, publicKey });
+  }
+  return new Response(RESPONSES.WRONG, { status: 400 });
+}
+
+function GetId() {
   const [formState, setFormState] = useState({ name: "", email: "" });
-  const [isLoading, setIsLoading] = useState(false);
   const downloadFile = useClientSideDownload();
-  const navigation = useNavigate();
+  const navigation = useNavigation();
+  const navigate = useNavigate();
+
+  const actionData = useActionData<typeof action>();
 
   const [playConfirmation] = useSound(confirmationSfx, { volume: 0.5 });
+  const [playError] = useSound(errorSfx, { volume: 0.5 });
 
   const validForm =
     formState.name.length &&
     formState.email.length &&
     EMAIL_REGEX_99_99.test(formState.email.trim());
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  if (
+    navigation.state === "idle" &&
+    actionData &&
+    ![RESPONSES.FULL, RESPONSES.WRONG].includes(actionData)
+  ) {
+    downloadFile(actionData.publicKey, "public.pgp");
+    downloadFile(actionData.privateKey, "private.pgp");
+    playConfirmation();
+    navigate("/id-check");
+  } else if (
+    navigation.state === "idle" &&
+    [RESPONSES.FULL, RESPONSES.WRONG].includes(actionData)
+  ) {
+    playError();
+  }
 
-    if (validForm) {
-      setIsLoading(true);
-      const { privateKey, publicKey } = await getPGPKeys(
-        formState.name,
-        formState.email
-      );
-      downloadFile(privateKey, "private.pgp");
-      downloadFile(publicKey, "public.pgp");
-      playConfirmation();
-      navigation("/id-check");
-    }
-  };
-
-  return (
-    <Form
-      className="text-white flex flex-col p-4 gap-4"
-      method="post"
-      onSubmit={handleSubmit}
-    >
+  return navigation.state === "idle" && actionData === "full" ? (
+    <div className="text-white">three's a crowd</div>
+  ) : (
+    <Form className="text-white flex flex-col p-4 gap-4" method="post">
       <Input
         type="text"
         onChange={(e) =>
@@ -64,10 +108,12 @@ const Download = () => {
         placeholder="email"
       />
       <Button disabled={!validForm} className="col-span-2" type="submit">
-        {isLoading ? "Creating public and private key..." : "Create key pair"}
+        {navigation.state !== "idle"
+          ? "Creating public and private key..."
+          : "Create key pair"}
       </Button>
     </Form>
   );
-};
+}
 
-export default Download;
+export default GetId;

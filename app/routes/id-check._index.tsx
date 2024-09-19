@@ -4,7 +4,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useKeyFileContent } from "../root";
 
-function IdCheck() {
+const IdCheck = () => {
   const { setPublicKeyFileContent, setPrivateKeyFileContent } =
     useKeyFileContent();
 
@@ -61,6 +61,6 @@ function IdCheck() {
       </Link>
     </>
   );
-}
+};
 
 export default IdCheck;

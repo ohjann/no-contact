@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import * as openpgp from "openpgp";
+import * as crypto from "crypto";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -57,4 +58,26 @@ export async function getPGPKeys(name: string, email: string) {
     userIDs: [{ name, email }], // you can pass multiple user IDs
     passphrase: "super long and hard to guess secret", // protects the private key TODO
   });
+}
+
+export function hashString(theString: string) {
+  const salt = crypto.randomBytes(32).toString("hex");
+  const genHash = crypto
+    .pbkdf2Sync(theString, salt, 10000, 64, "sha512")
+    .toString("hex");
+  return {
+    salt: salt,
+    hash: genHash,
+  };
+}
+
+export function verifyHashedString(
+  stringToCheck: string,
+  hash: string,
+  salt: string
+) {
+  const checkHash = crypto
+    .pbkdf2Sync(stringToCheck, salt, 10000, 64, "sha512")
+    .toString("hex");
+  return hash === checkHash;
 }
