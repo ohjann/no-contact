@@ -15,15 +15,18 @@ import { Suspense, useState } from "react";
 
 import * as steg from "../lib/steganography.js";
 import Raffle from "../assets/raffle-ticket-sheet-png-64-os4g9z2rhcq4vwsq.png";
+import { copycat } from "@snaplet/copycat";
 
 export async function action({ request }: ActionArgs) {
   const formData = await request.formData();
   const message = formData.get("message");
+  const scrambled = formData.get("scrambled");
 
   const db = mongodb.db("nocontact");
   const collection = db.collection("messages");
   await collection.insertOne({
     text: message,
+    scrambled,
     user: { id: "eoghan", name: "Eoghan" },
     sentAt: new Date(),
   });
@@ -116,7 +119,10 @@ function App() {
       message
     );
     submit(
-      { message: encryptedMessage.toString() },
+      {
+        message: encryptedMessage.toString(),
+        scrambled: copycat.scramble(message), // for UI purposes
+      },
       { method: "post", preventScrollReset: true, replace: true }
     );
   };
