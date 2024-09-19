@@ -1,4 +1,4 @@
-import { Suspense, useMemo } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import {
   MinChatUiProvider,
   MainContainer,
@@ -17,12 +17,9 @@ import {
   json,
   Navigate,
 } from "@remix-run/react";
-import type { Message, User } from "../types";
-import {
-  decryptMessage,
-  encryptMessage,
-  getUserIdFromPublicKey,
-} from "../lib/utils";
+import type { Message } from "../types";
+import { decryptMessage, encryptMessage } from "../lib/utils";
+import { useGetUserIdFromPublicKey } from "../hooks/useGetUserIdFromPublicKey";
 
 import { useKeyFileContent } from "../root";
 
@@ -30,14 +27,15 @@ export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
   const message = formData.get("message");
   const scrambled = formData.get("scrambled");
+  const identity = formData.get("identity");
 
-  if (message) {
+  if (message && identity) {
     const db = mongodb.db("nocontact"); // TODO: db layer
     const collection = db.collection("messages");
     await collection.insertOne({
       text: message,
       scrambled,
-      user: { id: "eoghan", name: "Eoghan" },
+      user: JSON.parse(identity.toString()),
       sentAt: new Date(),
     });
   }
@@ -55,8 +53,13 @@ export async function loader() {
 export default function Chat() {
   const { messages } = useLoaderData<typeof loader>();
   const submit = useSubmit();
+  const { getUser, user } = useGetUserIdFromPublicKey();
 
   const { publicKeyFileContent, privateKeyFileContent } = useKeyFileContent();
+
+  useEffect(() => {
+    getUser(publicKeyFileContent as string);
+  }, [publicKeyFileContent, getUser]);
 
   const decryptedMessages = useMemo(
     () =>
@@ -89,21 +92,8 @@ export default function Chat() {
   );
 
   if (!privateKeyFileContent || !publicKeyFileContent) {
-    console.log(privateKeyFileContent, publicKeyFileContent);
     return <Navigate to={"/id-check"} replace />;
   }
-
-  let identity: User;
-
-  getUserIdFromPublicKey(publicKeyFileContent as string).then((id) => {
-    if (id) {
-      const [name, email] = id[0].split(" <");
-      identity = {
-        name,
-        id: email.substring(0, email.length - 1),
-      };
-    }
-  });
 
   const handleMessageSend = async (message: string) => {
     const encryptedMessage = await encryptMessage(
@@ -114,6 +104,7 @@ export default function Chat() {
       {
         message: encryptedMessage.toString(),
         scrambled: copycat.scramble(message), // for UI purposes
+        identity: JSON.stringify(user),
       },
       {
         method: "post",
@@ -148,25 +139,25 @@ export default function Chat() {
             {messages.length > 0 && (
               <Suspense fallback={<div className="h-full">Decrypting...</div>}>
                 <Await resolve={decryptedMessages}>
-                  {(resolvedValue) =>
-                    identity && identity.name !== "eoghan" ? (
-                      <div className="[&>*>*>*>*>*>div>*>div:nth-child(2)]:bg-black [&>*>*>*>*>*>div>*>div:nth-child(2)]:p-0">
+                  {(resolvedValue) => {
+                    console.log(user, resolvedValue);
+                    return user ? (
+                      <div>
                         <MessageList
-                          currentUserId={identity.id}
-                          messages={messages.map((m) => ({
+                          currentUserId={user.id}
+                          messages={resolvedValue.map((m) => ({
                             ...m,
-                            text: m.scrambled,
-                            user: identity,
+                            text: m.text.includes("BEGIN")
+                              ? m.scrambled
+                              : m.text,
+                            user: user,
                           }))}
                         />
                       </div>
                     ) : (
-                      <MessageList
-                        currentUserId={identity.id}
-                        messages={resolvedValue}
-                      />
-                    )
-                  }
+                      ""
+                    );
+                  }}
                 </Await>
               </Suspense>
             )}
