@@ -8,8 +8,10 @@ import {
 } from "@minchat/react-chat-ui";
 import { json } from "@remix-run/node";
 import type { ActionArgs } from "@remix-run/node";
-import { useLoaderData, useSubmit } from "@remix-run/react";
+import { Await, useLoaderData, useSubmit } from "@remix-run/react";
 import { mongodb } from "~/utils/db.server";
+import * as openpgp from "openpgp";
+import { useState } from "react";
 
 export async function action({ request }: ActionArgs) {
   const formData = await request.formData();
@@ -30,33 +32,188 @@ export async function loader() {
   const collection = db.collection("messages");
 
   const messages = await collection.find().toArray();
+
   return json({ messages });
+}
+
+// userIDs: [{ name: "Jon Smith", email: "jon@example.com" }], // you can pass multiple user IDs
+// passphrase: "super long and hard to guess secret", // protects the private key
+async function encryptMessage(passedPublicKey: string, message: string) {
+  const publicKey = await openpgp.readKey({ armoredKey: passedPublicKey });
+
+  return openpgp.encrypt({
+    message: await openpgp.createMessage({ text: message }), // input as Message object
+    encryptionKeys: publicKey,
+  });
+}
+
+async function decryptMessage(
+  passedPublicKey: string,
+  passedPrivateKey: string,
+  encrypted: string
+) {
+  if (!encrypted.includes("BEGIN")) {
+    // not a pgp message
+    return encrypted;
+  }
+
+  const message = await openpgp.readMessage({
+    armoredMessage: encrypted, // parse armored message
+  });
+  const publicKey = await openpgp.readKey({ armoredKey: passedPublicKey });
+  const privateKey = await openpgp.decryptKey({
+    privateKey: await openpgp.readPrivateKey({ armoredKey: passedPrivateKey }),
+    passphrase: "super long and hard to guess secret",
+  });
+  const { data: decrypted, signatures } = await openpgp.decrypt({
+    message,
+    verificationKeys: publicKey, // optional
+    decryptionKeys: privateKey,
+  });
+  return decrypted;
+}
+
+async function downloadPGPKeys() {
+  const { privateKey, publicKey } = await openpgp.generateKey({
+    type: "rsa", // Type of the key
+    rsaBits: 4096, // RSA key size (defaults to 4096 bits)
+    userIDs: [{ name: "Jon Smith", email: "jon@example.com" }], // you can pass multiple user IDs
+    passphrase: "super long and hard to guess secret", // protects the private key
+  });
+
+  console.log(privateKey); // '-----BEGIN PGP PRIVATE KEY BLOCK ... '
+  console.log(publicKey); // '-----BEGIN PGP PUBLIC KEY BLOCK ... '
+
+  /* HACKY PGP FILE DOWNLOAD */
+  var element = document.createElement("a");
+  element.setAttribute(
+    "href",
+    "data:text/plain;charset=utf-8," + encodeURIComponent(privateKey)
+  );
+  element.setAttribute("download", "private.pgp");
+  element.style.display = "none";
+  document.body.appendChild(element);
+  element.click();
+  document.body.removeChild(element);
+
+  var element = document.createElement("a");
+  element.setAttribute(
+    "href",
+    "data:text/plain;charset=utf-8," + encodeURIComponent(publicKey)
+  );
+  element.setAttribute("download", "public.pgp");
+  element.style.display = "none";
+  document.body.appendChild(element);
+  element.click();
+  document.body.removeChild(element);
 }
 
 function App() {
   const { messages } = useLoaderData();
+  const [publicFileContent, setPublicFileContent] = useState<
+    string | ArrayBuffer | null
+  >();
+  const [privateFileContent, setPrivateFileContent] = useState<
+    string | ArrayBuffer | null
+  >();
+
   const submit = useSubmit();
-  const handleMessageSend = (message: string) => {
+  const handleMessageSend = async (message: string) => {
+    console.log(publicFileContent);
+    const encryptedMessage = await encryptMessage(
+      publicFileContent!.toString(),
+      message
+    );
     submit(
-      { message },
+      { message: encryptedMessage.toString() },
       { method: "post", preventScrollReset: true, replace: true }
     );
   };
 
+  const decryptedMessages = Promise.all(
+    messages.map(async (m: any) => {
+      if (
+        !publicFileContent ||
+        !privateFileContent ||
+        !m.text.includes("BEGIN")
+      ) {
+        return m;
+      }
+      return {
+        ...m,
+        text: await decryptMessage(
+          publicFileContent.toString(),
+          privateFileContent.toString(),
+          m.text
+        ),
+      };
+    })
+  );
+
+  const handleFileChange =
+    (type: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target) {
+            const content = e.target.result;
+            if (type === "public") {
+              setPublicFileContent(content);
+            } else {
+              setPrivateFileContent(content);
+            }
+          }
+        };
+        reader.readAsText(file);
+      }
+    };
+
+  console.log(decryptedMessages);
   return (
-    <MinChatUiProvider theme="#6ea9d7">
-      <MainContainer style={{ height: "100vh" }}>
-        <MessageContainer>
-          <MessageHeader />
-          <MessageList currentUserId="eoghan" messages={messages || []} />
-          <MessageInput
-            placeholder="Type message here"
-            showSendButton
-            onSendMessage={handleMessageSend}
-          />
-        </MessageContainer>
-      </MainContainer>
-    </MinChatUiProvider>
+    <>
+      <button onClick={downloadPGPKeys}>Download</button>
+      <MinChatUiProvider theme="#6ea9d7">
+        <MainContainer style={{ height: "100vh" }}>
+          <MessageContainer>
+            <MessageHeader />
+            <Await resolve={decryptedMessages}>
+              {(resolvedValue) => (
+                <MessageList
+                  currentUserId="eoghan"
+                  messages={resolvedValue || []}
+                />
+              )}
+            </Await>
+            <MessageInput
+              placeholder="Type message here"
+              showSendButton
+              onSendMessage={handleMessageSend}
+            />
+          </MessageContainer>
+        </MainContainer>
+      </MinChatUiProvider>
+      <div>
+        <label htmlFor="public">Public:</label>
+        <input
+          type="file"
+          id="public"
+          name="public"
+          onChange={handleFileChange("public")}
+          required
+        />
+      </div>
+      <div>
+        <label htmlFor="private">Private:</label>
+        <input
+          type="file"
+          id="private"
+          name="private"
+          onChange={handleFileChange("private")}
+          required
+        />
+      </div>
+    </>
   );
 }
 
