@@ -29,7 +29,7 @@ export async function decryptMessage(
   });
   const privateKey = await openpgp.decryptKey({
     privateKey: await openpgp.readPrivateKey({ armoredKey: passedPrivateKey }),
-    // passphrase: "super long and hard to guess secret", // TODO
+    passphrase: "super long and hard to guess secret", // TODO
   });
   const { data: decrypted } = await openpgp.decrypt({
     message,
@@ -55,6 +55,6 @@ export async function getPGPKeys(name: string, email: string) {
     type: "rsa", // Type of the key
     rsaBits: 4096, // RSA key size (defaults to 4096 bits)
     userIDs: [{ name, email }], // you can pass multiple user IDs
-    // passphrase: "super long and hard to guess secret", // protects the private key TODO
+    passphrase: "super long and hard to guess secret", // protects the private key TODO
   });
 }

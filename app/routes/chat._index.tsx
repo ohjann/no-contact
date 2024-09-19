@@ -31,14 +31,16 @@ export async function action({ request }: ActionFunctionArgs) {
   const message = formData.get("message");
   const scrambled = formData.get("scrambled");
 
-  const db = mongodb.db("nocontact");
-  const collection = db.collection("messages");
-  await collection.insertOne({
-    text: message,
-    scrambled,
-    user: { id: "eoghan", name: "Eoghan" },
-    sentAt: new Date(),
-  });
+  if (message) {
+    const db = mongodb.db("nocontact");
+    const collection = db.collection("messages");
+    await collection.insertOne({
+      text: message,
+      scrambled,
+      user: { id: "eoghan", name: "Eoghan" },
+      sentAt: new Date(),
+    });
+  }
   return json({ ok: true });
 }
 
@@ -65,19 +67,29 @@ export default function Chat() {
             if (!privateKeyFileContent || !m.text.includes("BEGIN")) {
               return m;
             }
-            return {
-              ...m,
-              text: await decryptMessage(
+            try {
+              const text = await decryptMessage(
                 privateKeyFileContent.toString(),
                 m.text
-              ),
-            };
+              );
+              return {
+                ...m,
+                text,
+              };
+            } catch (e) {
+              console.log(e);
+              return {
+                ...m,
+                text: "ERROR",
+              };
+            }
           })
       ),
     [messages, privateKeyFileContent]
   );
 
   if (!privateKeyFileContent || !publicKeyFileContent) {
+    console.log(privateKeyFileContent, publicKeyFileContent);
     return <Navigate to={"/id-check"} replace />;
   }
 
@@ -103,7 +115,12 @@ export default function Chat() {
         message: encryptedMessage.toString(),
         scrambled: copycat.scramble(message), // for UI purposes
       },
-      { method: "post", preventScrollReset: true, replace: true }
+      {
+        method: "post",
+        preventScrollReset: true,
+        replace: true,
+        navigate: false,
+      }
     );
   };
 
@@ -128,31 +145,31 @@ export default function Chat() {
       <div className="col-start-2 bg-white rounded-sm h-[700px] max-h-[100vh] shadow-[0_0px_20px_0px_rgba(255,255,255,255.3)] min-w-[490px]">
         <MainContainer>
           <MessageContainer>
-            <Suspense fallback={<div className="h-full">Decrypting...</div>}>
-              <Await resolve={decryptedMessages}>
-                {(resolvedValue) =>
-                  identity && identity.name !== "eoghan" ? (
-                    <div className="[&>*>*>*>*>*>div>*>div:nth-child(2)]:bg-black [&>*>*>*>*>*>div>*>div:nth-child(2)]:p-0">
-                      <MessageList
-                        currentUserId={identity}
-                        messages={
-                          messages.map((m) => ({
+            {messages.length > 0 && (
+              <Suspense fallback={<div className="h-full">Decrypting...</div>}>
+                <Await resolve={decryptedMessages}>
+                  {(resolvedValue) =>
+                    identity && identity.name !== "eoghan" ? (
+                      <div className="[&>*>*>*>*>*>div>*>div:nth-child(2)]:bg-black [&>*>*>*>*>*>div>*>div:nth-child(2)]:p-0">
+                        <MessageList
+                          currentUserId={identity.id}
+                          messages={messages.map((m) => ({
                             ...m,
                             text: m.scrambled,
                             user: identity,
-                          })) || []
-                        }
+                          }))}
+                        />
+                      </div>
+                    ) : (
+                      <MessageList
+                        currentUserId={identity.id}
+                        messages={resolvedValue}
                       />
-                    </div>
-                  ) : (
-                    <MessageList
-                      currentUserId={identity}
-                      messages={resolvedValue || []}
-                    />
-                  )
-                }
-              </Await>
-            </Suspense>
+                    )
+                  }
+                </Await>
+              </Suspense>
+            )}
             <div>
               <MessageInput
                 placeholder="Type message here"
