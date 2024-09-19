@@ -158,6 +158,7 @@ function App() {
       }
     };
 
+  const currentUserId = "eoghan";
   return (
     <>
       <button onClick={downloadPGPKeys}>Download</button>
@@ -167,12 +168,24 @@ function App() {
             <MessageHeader />
             <Suspense fallback={<div>Loading...</div>}>
               <Await resolve={decryptedMessages}>
-                {(resolvedValue) => (
-                  <MessageList
-                    currentUserId="eoghan"
-                    messages={resolvedValue || []}
-                  />
-                )}
+                {(resolvedValue) =>
+                  currentUserId !== "eoghan" ? (
+                    <div className="[&>*>*>*>*>*>div>*>div]:blur-sm">
+                      <MessageList
+                        currentUserId={currentUserId}
+                        messages={
+                          messages.map((m) => ({ ...m, text: m.scrambled })) ||
+                          []
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <MessageList
+                      currentUserId={currentUserId}
+                      messages={resolvedValue || []}
+                    />
+                  )
+                }
               </Await>
             </Suspense>
             <MessageInput
