@@ -1,20 +1,15 @@
-import {
-  MinChatUiProvider,
-  MainContainer,
-  MessageInput,
-  MessageContainer,
-  MessageList,
-  MessageHeader,
-} from "@minchat/react-chat-ui";
-import { Suspense, useState } from "react";
+import { useState } from "react";
 import type { ChangeEvent } from "react";
 import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
-import { Await, useLoaderData, useSubmit } from "@remix-run/react";
-import * as openpgp from "openpgp";
+import { useLoaderData, useSubmit } from "@remix-run/react";
+
+import Chat from "./components/Chat";
 
 import { copycat } from "@snaplet/copycat";
 import { mongodb } from "../utils/db.server.js";
+import { encryptMessage } from "../lib/utils.js";
+import type { Message } from "~/types";
 
 export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
@@ -34,84 +29,11 @@ export async function action({ request }: ActionFunctionArgs) {
 
 export async function loader() {
   const db = mongodb.db("nocontact");
-  const collection = db.collection("messages");
+  const collection = db.collection<Message>("messages");
 
-  const messages = await collection.find().toArray();
+  const messages: Message[] = await collection.find().toArray();
 
   return json({ messages });
-}
-
-async function encryptMessage(passedPublicKey: string, message: string) {
-  const publicKey = await openpgp.readKey({ armoredKey: passedPublicKey });
-
-  return openpgp.encrypt({
-    message: await openpgp.createMessage({ text: message }), // input as Message object
-    encryptionKeys: publicKey,
-  });
-}
-
-async function decryptMessage(passedPrivateKey: string, encrypted: string) {
-  if (!encrypted.includes("BEGIN")) {
-    // not a pgp message
-    return encrypted;
-  }
-
-  const message = await openpgp.readMessage({
-    armoredMessage: encrypted, // parse armored message
-  });
-  const privateKey = await openpgp.decryptKey({
-    privateKey: await openpgp.readPrivateKey({ armoredKey: passedPrivateKey }),
-    passphrase: "super long and hard to guess secret",
-  });
-  const { data: decrypted } = await openpgp.decrypt({
-    message,
-    decryptionKeys: privateKey,
-  });
-
-  return decrypted;
-}
-
-async function downloadPGPKeys() {
-  const { privateKey, publicKey } = await openpgp.generateKey({
-    type: "rsa", // Type of the key
-    rsaBits: 4096, // RSA key size (defaults to 4096 bits)
-    userIDs: [{ name: "Jon Smith", email: "jon@example.com" }], // you can pass multiple user IDs
-    passphrase: "super long and hard to guess secret", // protects the private key
-  });
-
-  /* HACKY PGP FILE DOWNLOAD */
-  var element = document.createElement("a");
-  element.setAttribute(
-    "href",
-    "data:text/plain;charset=utf-8," + encodeURIComponent(privateKey)
-  );
-  element.setAttribute("download", "private.pgp");
-  element.style.display = "none";
-  document.body.appendChild(element);
-  element.click();
-  document.body.removeChild(element);
-
-  var element = document.createElement("a");
-  element.setAttribute(
-    "href",
-    "data:text/plain;charset=utf-8," + encodeURIComponent(publicKey)
-  );
-  element.setAttribute("download", "public.pgp");
-  element.style.display = "none";
-  document.body.appendChild(element);
-  element.click();
-  document.body.removeChild(element);
-}
-
-async function getUserIdFromPublicKey(armoredPublicKey: string) {
-  try {
-    const publicKey = await openpgp.readKey({ armoredKey: armoredPublicKey });
-    const userIds = publicKey.getUserIDs();
-    return userIds;
-  } catch (error) {
-    console.error("Error reading public key:", error);
-    return null;
-  }
 }
 
 function App() {
@@ -138,18 +60,6 @@ function App() {
     );
   };
 
-  const decryptedMessages = Promise.all(
-    messages.map(async (m: any) => {
-      if (!privateFileContent || !m.text.includes("BEGIN")) {
-        return m;
-      }
-      return {
-        ...m,
-        text: await decryptMessage(privateFileContent.toString(), m.text),
-      };
-    })
-  );
-
   const handleFileChange =
     (type: string) => (e: ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
@@ -169,48 +79,14 @@ function App() {
       }
     };
 
-  const currentUserId = "eoghan";
   return (
     <div>
-      <button onClick={downloadPGPKeys}>Download</button>
-      <MinChatUiProvider theme="#6ea9d7">
-        <MainContainer style={{ height: "100vh" }}>
-          <MessageContainer>
-            <MessageHeader />
-            <Suspense fallback={<div>Loading...</div>}>
-              <Await resolve={decryptedMessages}>
-                {(resolvedValue) =>
-                  currentUserId !== "eoghan" ? (
-                    <div className="[&>*>*>*>*>*>div>*>div]:blur-sm">
-                      <MessageList
-                        currentUserId={currentUserId}
-                        messages={
-                          messages.map((m) => ({
-                            ...m,
-                            text: m.scrambled,
-                            user: currentUserId,
-                          })) || []
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <MessageList
-                      currentUserId={currentUserId}
-                      messages={resolvedValue || []}
-                    />
-                  )
-                }
-              </Await>
-            </Suspense>
-            <MessageInput
-              placeholder="Type message here"
-              showSendButton
-              onSendMessage={handleMessageSend}
-            />
-          </MessageContainer>
-        </MainContainer>
-      </MinChatUiProvider>
       <div>
+        <Chat
+          messages={messages}
+          privateFileContent={privateFileContent as string}
+          handleMessageSend={handleMessageSend}
+        />
         <label htmlFor="public">Public:</label>
         <input
           type="file"
