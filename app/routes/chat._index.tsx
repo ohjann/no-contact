@@ -49,11 +49,12 @@ export async function loader() {
   const collection = db.collection<Message>("messages");
 
   const messages: Message[] = await collection.find().toArray();
-  return json({ messages });
+  const users = await db.collection("users").find().toArray();
+  return json({ messages, users: users.map((u) => u.name) });
 }
 
 export default function Chat() {
-  const { messages } = useLoaderData<typeof loader>();
+  const { messages, users } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const { getUser, user } = useGetUserIdFromPublicKey();
 
@@ -63,35 +64,42 @@ export default function Chat() {
     getUser(publicKeyFileContent as string);
   }, [publicKeyFileContent, getUser]);
 
-  const decryptedMessages = useMemo(
-    () =>
-      Promise.all(
-        messages
-          .filter(({ text }) => text)
-          .map(async (m: any) => {
-            if (!privateKeyFileContent || !m.text.includes("BEGIN")) {
-              return m;
-            }
-            try {
-              const text = await decryptMessage(
-                privateKeyFileContent.toString(),
-                m.text
-              );
-              return {
-                ...m,
-                text,
-              };
-            } catch (e) {
-              console.log(e);
-              return {
-                ...m,
-                text: "ERROR",
-              };
-            }
-          })
-      ),
-    [messages, privateKeyFileContent]
-  );
+  const decryptedMessages = useMemo(() => {
+    const otherUser = users.find((u) => u !== user?.name);
+    return Promise.all(
+      messages
+        .filter(({ text }) => text)
+        .map(async (m: any) => {
+          if (!privateKeyFileContent || !m.text.includes("BEGIN")) {
+            return m;
+          }
+          try {
+            const text = await decryptMessage(
+              privateKeyFileContent.toString(),
+              m.text
+            );
+            return {
+              ...m,
+              text,
+              user: user,
+              createdAt: new Date(m.sentAt),
+              seen: false,
+            };
+          } catch (e) {
+            return {
+              ...m,
+              text: m.scrambled,
+              user: {
+                id: otherUser,
+                name: otherUser,
+              },
+              createdAt: new Date(m.sentAt),
+              seen: false,
+            };
+          }
+        })
+    );
+  }, [messages, privateKeyFileContent, user, users]);
 
   if (!privateKeyFileContent || !publicKeyFileContent) {
     return <Navigate to={"/id-check"} replace />;
@@ -135,25 +143,18 @@ export default function Chat() {
       }}
       theme="#00000"
     >
-      <div className="col-start-2 bg-white rounded-sm h-[700px] max-h-[100vh] shadow-[0_0px_20px_0px_rgba(255,255,255,255.3)] min-w-[490px]">
+      <div className="col-start-2 bg-white rounded-sm h-[700px] max-h-[100vh] shadow-[0_0px_20px_0px_rgba(255,255,255,255.3)] min-w-[490px] [&>div>div>div:first-child]:min-h-[calc(100%-56px)] [&>div>div>div:nth-child(2)>div]:absolute [&>div>div>div:nth-child(2)>div]:bottom-0 [&>div>div>div>div>div:nth-child(2)>div]:justify-end">
         <MainContainer>
           <MessageContainer>
             {messages.length > 0 && (
               <Suspense fallback={<div className="h-full">Decrypting...</div>}>
                 <Await resolve={decryptedMessages}>
                   {(resolvedValue) => {
-                    console.log(user, resolvedValue);
                     return user ? (
                       <div>
                         <MessageList
                           currentUserId={user.id}
-                          messages={resolvedValue.map((m) => ({
-                            ...m,
-                            text: m.text.includes("BEGIN")
-                              ? m.scrambled
-                              : m.text,
-                            user: user,
-                          }))}
+                          messages={resolvedValue}
                         />
                       </div>
                     ) : (

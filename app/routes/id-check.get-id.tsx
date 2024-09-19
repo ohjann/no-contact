@@ -115,7 +115,7 @@ function GetId() {
           placeholder="email"
         />
         <p className="text-xs text-gray-400 -z-10">
-          <u>everything</u> else is either hashed or encrypted
+          everything else is either hashed or encrypted
         </p>
         <Button disabled={!validForm} className="col-span-2" type="submit">
           {navigation.state !== "idle"
