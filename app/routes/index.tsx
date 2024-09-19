@@ -13,6 +13,9 @@ import { mongodb } from "~/utils/db.server";
 import * as openpgp from "openpgp";
 import { Suspense, useState } from "react";
 
+import * as steg from "../lib/steganography.js";
+import Raffle from "../assets/raffle-ticket-sheet-png-64-os4g9z2rhcq4vwsq.png";
+
 export async function action({ request }: ActionArgs) {
   const formData = await request.formData();
   const message = formData.get("message");
@@ -36,8 +39,6 @@ export async function loader() {
   return json({ messages });
 }
 
-// userIDs: [{ name: "Jon Smith", email: "jon@example.com" }], // you can pass multiple user IDs
-// passphrase: "super long and hard to guess secret", // protects the private key
 async function encryptMessage(passedPublicKey: string, message: string) {
   const publicKey = await openpgp.readKey({ armoredKey: passedPublicKey });
 
@@ -47,11 +48,7 @@ async function encryptMessage(passedPublicKey: string, message: string) {
   });
 }
 
-async function decryptMessage(
-  passedPublicKey: string,
-  passedPrivateKey: string,
-  encrypted: string
-) {
+async function decryptMessage(passedPrivateKey: string, encrypted: string) {
   if (!encrypted.includes("BEGIN")) {
     // not a pgp message
     return encrypted;
@@ -60,14 +57,12 @@ async function decryptMessage(
   const message = await openpgp.readMessage({
     armoredMessage: encrypted, // parse armored message
   });
-  const publicKey = await openpgp.readKey({ armoredKey: passedPublicKey });
   const privateKey = await openpgp.decryptKey({
     privateKey: await openpgp.readPrivateKey({ armoredKey: passedPrivateKey }),
     passphrase: "super long and hard to guess secret",
   });
-  const { data: decrypted, signatures } = await openpgp.decrypt({
+  const { data: decrypted } = await openpgp.decrypt({
     message,
-    verificationKeys: publicKey, // optional
     decryptionKeys: privateKey,
   });
   return decrypted;
@@ -80,9 +75,6 @@ async function downloadPGPKeys() {
     userIDs: [{ name: "Jon Smith", email: "jon@example.com" }], // you can pass multiple user IDs
     passphrase: "super long and hard to guess secret", // protects the private key
   });
-
-  console.log(privateKey); // '-----BEGIN PGP PRIVATE KEY BLOCK ... '
-  console.log(publicKey); // '-----BEGIN PGP PUBLIC KEY BLOCK ... '
 
   /* HACKY PGP FILE DOWNLOAD */
   var element = document.createElement("a");
@@ -119,7 +111,6 @@ function App() {
 
   const submit = useSubmit();
   const handleMessageSend = async (message: string) => {
-    console.log(publicFileContent);
     const encryptedMessage = await encryptMessage(
       publicFileContent!.toString(),
       message
@@ -132,20 +123,12 @@ function App() {
 
   const decryptedMessages = Promise.all(
     messages.map(async (m: any) => {
-      if (
-        !publicFileContent ||
-        !privateFileContent ||
-        !m.text.includes("BEGIN")
-      ) {
+      if (!privateFileContent || !m.text.includes("BEGIN")) {
         return m;
       }
       return {
         ...m,
-        text: await decryptMessage(
-          publicFileContent.toString(),
-          privateFileContent.toString(),
-          m.text
-        ),
+        text: await decryptMessage(privateFileContent.toString(), m.text),
       };
     })
   );
@@ -169,7 +152,6 @@ function App() {
       }
     };
 
-  console.log(decryptedMessages);
   return (
     <>
       <button onClick={downloadPGPKeys}>Download</button>
