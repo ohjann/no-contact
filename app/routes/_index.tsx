@@ -2,13 +2,19 @@ import { useState } from "react";
 import type { ChangeEvent } from "react";
 import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useSubmit } from "@remix-run/react";
+import { useLoaderData } from "@remix-run/react";
 
 import Chat from "./components/Chat";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Input } from "../components/ui/input";
 
-import { copycat } from "@snaplet/copycat";
 import { mongodb } from "../utils/db.server.js";
-import { encryptMessage } from "../lib/utils.js";
 import type { Message } from "~/types";
 
 export async function action({ request }: ActionFunctionArgs) {
@@ -45,21 +51,6 @@ function App() {
     string | ArrayBuffer | null
   >();
 
-  const submit = useSubmit();
-  const handleMessageSend = async (message: string) => {
-    const encryptedMessage = await encryptMessage(
-      publicFileContent!.toString(),
-      message
-    );
-    submit(
-      {
-        message: encryptedMessage.toString(),
-        scrambled: copycat.scramble(message), // for UI purposes
-      },
-      { method: "post", preventScrollReset: true, replace: true }
-    );
-  };
-
   const handleFileChange =
     (type: string) => (e: ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
@@ -82,28 +73,42 @@ function App() {
   return (
     <div>
       <div>
+        <Dialog open={!publicFileContent || !privateFileContent}>
+          <DialogContent className="noise border-black">
+            <DialogHeader>
+              <DialogTitle className="text-white">Identity Check</DialogTitle>
+              <DialogDescription>
+                <form className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="public">Public Key</label>
+                    <Input
+                      type="file"
+                      id="public"
+                      name="public"
+                      onChange={handleFileChange("public")}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="private">Private Key</label>
+                    <Input
+                      type="file"
+                      id="private"
+                      name="private"
+                      onChange={handleFileChange("private")}
+                      required
+                    />
+                  </div>
+                </form>
+              </DialogDescription>
+            </DialogHeader>
+          </DialogContent>
+        </Dialog>
+
         <Chat
           messages={messages}
           privateFileContent={privateFileContent as string}
-          handleMessageSend={handleMessageSend}
-        />
-        <label htmlFor="public">Public:</label>
-        <input
-          type="file"
-          id="public"
-          name="public"
-          onChange={handleFileChange("public")}
-          required
-        />
-      </div>
-      <div>
-        <label htmlFor="private">Private:</label>
-        <input
-          type="file"
-          id="private"
-          name="private"
-          onChange={handleFileChange("private")}
-          required
+          publicFileContent={publicFileContent as string}
         />
       </div>
     </div>
