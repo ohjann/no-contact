@@ -11,7 +11,7 @@ import type { ActionArgs } from "@remix-run/node";
 import { Await, useLoaderData, useSubmit } from "@remix-run/react";
 import { mongodb } from "~/utils/db.server";
 import * as openpgp from "openpgp";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 
 export async function action({ request }: ActionArgs) {
   const formData = await request.formData();
@@ -177,14 +177,16 @@ function App() {
         <MainContainer style={{ height: "100vh" }}>
           <MessageContainer>
             <MessageHeader />
-            <Await resolve={decryptedMessages}>
-              {(resolvedValue) => (
-                <MessageList
-                  currentUserId="eoghan"
-                  messages={resolvedValue || []}
-                />
-              )}
-            </Await>
+            <Suspense fallback={<div>Loading...</div>}>
+              <Await resolve={decryptedMessages}>
+                {(resolvedValue) => (
+                  <MessageList
+                    currentUserId="eoghan"
+                    messages={resolvedValue || []}
+                  />
+                )}
+              </Await>
+            </Suspense>
             <MessageInput
               placeholder="Type message here"
               showSendButton
