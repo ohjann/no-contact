@@ -40,10 +40,9 @@ export async function action({ request }: ActionFunctionArgs) {
       // maximum two users
       return new Response(RESPONSES.FULL, { status: 403 });
     }
-    const { salt: nameSalt, hash: nameHash } = hashString(name.toString());
     const { salt: emailSalt, hash: emailHash } = hashString(email.toString());
     await collection.insertOne({
-      name: `${nameHash}+${nameSalt}`,
+      name,
       email: `${emailHash}+${emailSalt}`,
     });
 
@@ -93,15 +92,20 @@ function GetId() {
     <div className="text-white">three's a crowd</div>
   ) : (
     <>
-      <Form className="text-white flex flex-col p-4 gap-4" method="post">
-        <Input
-          type="text"
-          onChange={(e) =>
-            setFormState({ ...formState, name: e.target.value.trim() })
-          }
-          name="name"
-          placeholder="name"
-        />
+      <Form className="text-white flex flex-col p-4 gap-2" method="post">
+        <div className="relative">
+          <Input
+            type="text"
+            onChange={(e) =>
+              setFormState({ ...formState, name: e.target.value.trim() })
+            }
+            name="name"
+            placeholder="name"
+          />
+          <p className="text-xs text-gray-400 absolute top-2 text-right -right-20 w-[80px] sm:-right-64  sm:w-[initial] -z-10">
+            &lt;-- this is the only input stored in plaintext
+          </p>
+        </div>
         <Input
           type="email"
           onChange={(e) =>
@@ -110,6 +114,9 @@ function GetId() {
           name="email"
           placeholder="email"
         />
+        <p className="text-xs text-gray-400 -z-10">
+          <u>everything</u> else is either hashed or encrypted
+        </p>
         <Button disabled={!validForm} className="col-span-2" type="submit">
           {navigation.state !== "idle"
             ? "Creating public and private key..."

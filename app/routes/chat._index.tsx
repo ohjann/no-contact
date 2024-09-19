@@ -42,6 +42,8 @@ export async function action({ request }: ActionFunctionArgs) {
   return json({ ok: true });
 }
 
+// TODO: cannot use pgp key for other user id, we'll need to assume that if we can't extract
+// a user identity that it's the other users message and use their in-database name
 export async function loader() {
   const db = mongodb.db("nocontact");
   const collection = db.collection<Message>("messages");

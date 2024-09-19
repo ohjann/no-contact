@@ -27,12 +27,11 @@ export async function action({ request }: ActionFunctionArgs) {
   const allUsers = await collection.find().toArray();
 
   if (
-    !allUsers.find(({ name: hashedName, email: hashedEmail }) => {
+    !allUsers.find(({ name: dbName, email: hashedEmail }) => {
       // iterate through all users because there's going to be max 2
-      const [nameHash, nameSalt] = hashedName.split("+");
       const [emailHash, emailSalt] = hashedEmail.split("+");
       return (
-        verifyHashedString(name, nameHash, nameSalt) &&
+        dbName === name &&
         verifyHashedString(cleanedEmail, emailHash, emailSalt)
       );
     })
