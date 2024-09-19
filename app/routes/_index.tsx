@@ -6,18 +6,17 @@ import {
   MessageList,
   MessageHeader,
 } from "@minchat/react-chat-ui";
-import { json } from "@remix-run/node";
-import type { ActionArgs } from "@remix-run/node";
-import { Await, useLoaderData, useSubmit } from "@remix-run/react";
-import { mongodb } from "~/utils/db.server";
-import * as openpgp from "openpgp";
 import { Suspense, useState } from "react";
+import type { ChangeEvent } from "react";
+import { json } from "@remix-run/node";
+import type { ActionFunctionArgs } from "@remix-run/node";
+import { Await, useLoaderData, useSubmit } from "@remix-run/react";
+import * as openpgp from "openpgp";
 
-import * as steg from "../lib/steganography.js";
-import Raffle from "../assets/raffle-ticket-sheet-png-64-os4g9z2rhcq4vwsq.png";
 import { copycat } from "@snaplet/copycat";
+import { mongodb } from "../utils/db.server.js";
 
-export async function action({ request }: ActionArgs) {
+export async function action({ request }: ActionFunctionArgs) {
   const formData = await request.formData();
   const message = formData.get("message");
   const scrambled = formData.get("scrambled");
@@ -68,6 +67,7 @@ async function decryptMessage(passedPrivateKey: string, encrypted: string) {
     message,
     decryptionKeys: privateKey,
   });
+
   return decrypted;
 }
 
@@ -103,8 +103,19 @@ async function downloadPGPKeys() {
   document.body.removeChild(element);
 }
 
+async function getUserIdFromPublicKey(armoredPublicKey: string) {
+  try {
+    const publicKey = await openpgp.readKey({ armoredKey: armoredPublicKey });
+    const userIds = publicKey.getUserIDs();
+    return userIds;
+  } catch (error) {
+    console.error("Error reading public key:", error);
+    return null;
+  }
+}
+
 function App() {
-  const { messages } = useLoaderData();
+  const { messages } = useLoaderData<typeof loader>();
   const [publicFileContent, setPublicFileContent] = useState<
     string | ArrayBuffer | null
   >();
@@ -140,7 +151,7 @@ function App() {
   );
 
   const handleFileChange =
-    (type: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    (type: string) => (e: ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
         const file = e.target.files[0];
         const reader = new FileReader();
@@ -160,7 +171,7 @@ function App() {
 
   const currentUserId = "eoghan";
   return (
-    <>
+    <div>
       <button onClick={downloadPGPKeys}>Download</button>
       <MinChatUiProvider theme="#6ea9d7">
         <MainContainer style={{ height: "100vh" }}>
@@ -174,8 +185,11 @@ function App() {
                       <MessageList
                         currentUserId={currentUserId}
                         messages={
-                          messages.map((m) => ({ ...m, text: m.scrambled })) ||
-                          []
+                          messages.map((m) => ({
+                            ...m,
+                            text: m.scrambled,
+                            user: currentUserId,
+                          })) || []
                         }
                       />
                     </div>
@@ -216,7 +230,7 @@ function App() {
           required
         />
       </div>
-    </>
+    </div>
   );
 }
 

@@ -14,7 +14,7 @@ if (connectionString.indexOf("appName") === -1)
       : "?appName=devrel.template.remix|";
 else
   connectionString = connectionString.replace(
-    /appName\=([a-z0-9]*)/i,
+    /appName=([a-z0-9]*)/i,
     (m, p) => `appName=devrel.template.remix|${p}`
   );
 
