@@ -1,7 +1,11 @@
 import { useState } from "react";
+import useSound from "use-sound";
+
 import { Button } from "~/components/ui/button";
 import { downloadPGPKeys } from "~/lib/utils";
 import { Input } from "~/components/ui/input";
+
+import confirmationSfx from "../../assets/sounds/confirmation_001.mp3";
 
 const EMAIL_REGEX_99_99 =
   /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
@@ -10,6 +14,8 @@ const Download = ({ goBack }: { goBack: Function }) => {
   const [name, setName] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const [playConfirmation] = useSound(confirmationSfx, { volume: 0.5 });
 
   const validForm =
     name.trim().length &&
@@ -20,6 +26,7 @@ const Download = ({ goBack }: { goBack: Function }) => {
     if (validForm) {
       setIsLoading(true);
       await downloadPGPKeys(name.trim(), email.trim());
+      playConfirmation();
       goBack();
     }
   };
